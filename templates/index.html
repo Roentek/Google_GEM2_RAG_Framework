@@ -144,9 +144,51 @@ select:focus{border-color:var(--accent)}
 .empty-icon{font-size:28px;opacity:.3}
 .empty-text{font-size:12.5px;letter-spacing:.3px}
 
+/* ── sync status dot ── */
+.sync-dot{
+  width:8px;height:8px;border-radius:50%;flex-shrink:0;
+  background:var(--muted);transition:background .4s;
+}
+.sync-dot.syncing{background:var(--yellow);animation:pulse 1.2s infinite}
+.sync-dot.watching{background:var(--green)}
+.sync-dot.error{background:var(--red)}
+.sync-label{font-size:10.5px;color:var(--muted2);white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;transition:color .3s}
+.sync-label.syncing{color:var(--yellow)}
+.sync-label.watching{color:var(--green)}
+.sync-label.error{color:var(--red)}
+
+/* ── toast notifications ── */
+#toasts{
+  position:fixed;bottom:24px;right:24px;
+  display:flex;flex-direction:column-reverse;gap:8px;
+  z-index:999;pointer-events:none;
+}
+.toast{
+  display:flex;align-items:flex-start;gap:10px;
+  background:var(--card);border:1px solid var(--border2);border-radius:10px;
+  padding:10px 14px;min-width:240px;max-width:340px;
+  box-shadow:0 4px 20px rgba(0,0,0,.5);
+  animation:toastIn .22s ease;pointer-events:auto;
+}
+.toast.out{animation:toastOut .25s ease forwards}
+.toast-icon{flex-shrink:0;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800}
+.toast.ingested .toast-icon{background:#1a2e1e;color:var(--green)}
+.toast.removed  .toast-icon{background:#2e1a1a;color:var(--red)}
+.toast.sync_start .toast-icon,.toast.sync_scan .toast-icon{background:#2a2200;color:var(--yellow)}
+.toast.sync_complete .toast-icon{background:#1a2e1e;color:var(--green)}
+.toast.watching .toast-icon{background:#161a2e;color:#9ba8ff}
+.toast.error .toast-icon{background:#2e1010;color:var(--red)}
+.toast-body{flex:1;min-width:0}
+.toast-title{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted2);margin-bottom:2px}
+.toast-msg{font-size:12px;color:var(--text);line-height:1.45;word-break:break-word}
+.toast-ts{font-size:10px;color:var(--muted);margin-top:3px}
+
 /* ── animations ── */
 @keyframes blink{0%,80%,100%{opacity:.2}40%{opacity:1}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes toastIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes toastOut{to{opacity:0;transform:translateY(6px) scale(.97)}}
 </style>
 </head>
 <body>
@@ -161,6 +203,9 @@ select:focus{border-color:var(--accent)}
       </div>
     </div>
     <div class="header-right">
+      <div id="sync-dot" class="sync-dot" title="Data sync status"></div>
+      <span id="sync-label" class="sync-label">Connecting…</span>
+      <div style="width:1px;height:16px;background:var(--border2);margin:0 4px"></div>
       <label>Filter</label>
       <select id="filter" class="filter-select">
         <option value="all">All types</option>
@@ -213,6 +258,7 @@ select:focus{border-color:var(--accent)}
   </div>
 
 </div>
+<div id="toasts"></div>
 <script>
 const $msg   = document.getElementById('messages');
 const $input = document.getElementById('input');
@@ -383,6 +429,78 @@ function autoResize() {
 $input.addEventListener('input', autoResize);
 $send.addEventListener('click', send);
 $input.addEventListener('keydown', e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
+
+// ── sync status + toast notifications ─────────────────────────────────────
+const $dot    = document.getElementById('sync-dot');
+const $slabel = document.getElementById('sync-label');
+const $toasts = document.getElementById('toasts');
+
+const TOAST_META = {
+  ingested:      { icon: '↑', title: 'Ingested' },
+  removed:       { icon: '✕', title: 'Removed' },
+  sync_start:    { icon: '⟳', title: 'Sync' },
+  sync_scan:     { icon: '⟳', title: 'Scan' },
+  sync_complete: { icon: '✓', title: 'Sync complete' },
+  watching:      { icon: '◉', title: 'Watching' },
+  error:         { icon: '!', title: 'Error' },
+  connected:     null,  // silent
+};
+
+function setDot(state, label) {
+  $dot.className  = 'sync-dot '   + state;
+  $slabel.className = 'sync-label ' + state;
+  if (label) $slabel.textContent = label;
+}
+
+function showToast(type, msg, ts) {
+  const meta = TOAST_META[type];
+  if (!meta) return;          // silent event
+
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.innerHTML = `
+    <div class="toast-icon">${meta.icon}</div>
+    <div class="toast-body">
+      <div class="toast-title">${meta.title}</div>
+      <div class="toast-msg">${esc(msg)}</div>
+      ${ts ? `<div class="toast-ts">${ts}</div>` : ''}
+    </div>`;
+  $toasts.appendChild(el);
+
+  // auto-dismiss after 5 s (errors stay 9 s)
+  const ttl = type === 'error' ? 9000 : 5000;
+  setTimeout(() => {
+    el.classList.add('out');
+    el.addEventListener('animationend', () => el.remove(), { once: true });
+  }, ttl);
+}
+
+function connectSSE() {
+  const es = new EventSource('/sync-events');
+
+  es.onmessage = (e) => {
+    let ev;
+    try { ev = JSON.parse(e.data); } catch { return; }
+    const { type, msg, ts } = ev;
+
+    // Update header dot
+    if (type === 'sync_start' || type === 'sync_scan') setDot('syncing', msg);
+    else if (type === 'sync_complete')                  setDot('syncing', msg);
+    else if (type === 'watching')                       setDot('watching', 'Live');
+    else if (type === 'error')                          setDot('error', 'Error');
+    else if (type === 'ingested' || type === 'removed') { /* keep current dot */ }
+
+    showToast(type, msg, ts);
+  };
+
+  es.onerror = () => {
+    setDot('', 'Disconnected');
+    es.close();
+    // Reconnect after 5 s
+    setTimeout(connectSSE, 5000);
+  };
+}
+connectSSE();
 </script>
 </body>
 </html>

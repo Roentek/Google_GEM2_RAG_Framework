@@ -1,10 +1,14 @@
 """GEM2 RAG — lightweight FastAPI chat server."""
 
+import asyncio
+import json
+import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -12,6 +16,11 @@ from src.config import Config
 from src.gemini_embedder import GeminiEmbedder
 from src.supabase_client import SupabaseVectorClient
 from src.retrieval.query_engine import QueryEngine
+from src.watcher import sync_then_watch
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
+
+DATA_DIR = Path(__file__).parent / "data"
 
 # ---------------------------------------------------------------------------
 # Shared resources (initialised once at startup)
@@ -20,7 +29,26 @@ _embedder: GeminiEmbedder | None = None
 _engine: QueryEngine | None = None
 _default_model: str = "anthropic/claude-sonnet-4"
 
+# ---------------------------------------------------------------------------
+# SSE broadcast — any number of browser clients can subscribe
+# ---------------------------------------------------------------------------
+_sse_queues: list[asyncio.Queue] = []
 
+
+def _broadcast(event_type: str, message: str) -> None:
+    """Push a sync/watcher event to all connected SSE clients."""
+    payload = json.dumps({
+        "type": event_type,
+        "msg": message,
+        "ts": datetime.now(timezone.utc).strftime("%H:%M:%S"),
+    })
+    for q in list(_sse_queues):
+        q.put_nowait(payload)
+
+
+# ---------------------------------------------------------------------------
+# Lifespan
+# ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _embedder, _engine, _default_model
@@ -30,7 +58,21 @@ async def lifespan(app: FastAPI):
     await _embedder.__aenter__()
     db = SupabaseVectorClient(cfg)
     _engine = QueryEngine(_embedder, db, cfg)
+
+    # Startup sync then live watcher — runs in background, pushes events to UI
+    DATA_DIR.mkdir(exist_ok=True)
+    watcher_task = asyncio.create_task(
+        sync_then_watch(_embedder, db, cfg, DATA_DIR, on_event=_broadcast),
+        name="data-folder-sync-watch",
+    )
+
     yield
+
+    watcher_task.cancel()
+    try:
+        await watcher_task
+    except asyncio.CancelledError:
+        pass
     if _embedder:
         await _embedder.close()
 
@@ -60,55 +102,38 @@ class ChatRequest(BaseModel):
 def _friendly_error(exc: Exception) -> str:
     msg = str(exc)
 
-    # Supabase: RPC function missing (schema not applied yet)
     if "match_media_embeddings" in msg and ("PGRST202" in msg or "schema cache" in msg.lower()):
         return (
             "The database search function is missing. "
             "Please run schema/supabase_schema.sql in your Supabase SQL editor to set up the vector table, "
             "then restart the server."
         )
-
-    # Supabase: table doesn't exist
     if "media_embeddings" in msg and ("42P01" in msg or "does not exist" in msg.lower()):
         return (
             "The media_embeddings table doesn't exist yet. "
             "Run schema/supabase_schema.sql in your Supabase dashboard first."
         )
-
-    # Supabase: connection / auth failure
     if "supabase" in msg.lower() or "postgrest" in msg.lower() or "PGRST" in msg:
         return (
             "Could not reach the database. "
             "Check that SUPABASE_PROJECT_URL and SUPABASE_PROJECT_KEY are correct in your .env file."
         )
-
-    # Gemini: bad API key
     if "GEMINI" in msg.upper() or ("generativelanguage" in msg and "401" in msg):
         return (
             "The Gemini API key was rejected. "
             "Check that GEMINI_API_KEY is set correctly in your .env file."
         )
-
-    # Gemini: quota / rate limit
     if "429" in msg and "generativelanguage" in msg:
         return "Gemini API rate limit reached. Wait a moment and try again."
-
-    # OpenRouter: bad key or quota
     if "openrouter" in msg.lower() or ("openrouter.ai" in msg and ("401" in msg or "403" in msg)):
         return (
             "OpenRouter rejected the request. "
             "Check that OPENROUTER_API_KEY is valid and has credits."
         )
-
-    # No results found (not really an error — surface it clearly)
     if "no relevant" in msg.lower():
         return "No matching content was found in the knowledge base. Try ingesting some files first."
-
-    # Generic network error
     if "connection" in msg.lower() or "timeout" in msg.lower() or "connect" in msg.lower():
         return "A network connection error occurred. Check your internet connection and try again."
-
-    # Fallback — hide raw traceback, show a clean message with a hint
     return (
         "Something went wrong while processing your request. "
         "Check the server terminal for details."
@@ -126,6 +151,35 @@ async def index():
 @app.get("/config")
 async def config():
     return {"default_model": _default_model}
+
+
+@app.get("/sync-events")
+async def sync_events():
+    """SSE stream — browser subscribes once and receives all sync/watcher events."""
+    queue: asyncio.Queue = asyncio.Queue()
+    _sse_queues.append(queue)
+
+    async def generate():
+        try:
+            # Send a heartbeat immediately so the connection is confirmed
+            yield "data: {\"type\":\"connected\",\"msg\":\"Connected to sync stream\",\"ts\":\"\"}\n\n"
+            while True:
+                payload = await queue.get()
+                yield f"data: {payload}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            if queue in _sse_queues:
+                _sse_queues.remove(queue)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/chat")

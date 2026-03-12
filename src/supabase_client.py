@@ -48,6 +48,20 @@ class SupabaseVectorClient:
     def delete_by_source(self, source: str) -> None:
         self._client.table("media_embeddings").delete().eq("source", source).execute()
 
+    def delete_by_source_prefix(self, prefix: str) -> None:
+        """Delete all rows whose source equals prefix or starts with 'prefix::' (chunks/frames)."""
+        self._client.table("media_embeddings").delete().eq("source", prefix).execute()
+        self._client.table("media_embeddings").delete().like("source", f"{prefix}::%").execute()
+
+    def get_all_sources(self) -> list[dict]:
+        """Return [{source, updated_at}] for every row — used by startup sync."""
+        result = (
+            self._client.table("media_embeddings")
+            .select("source,updated_at")
+            .execute()
+        )
+        return result.data or []
+
     def get_by_id(self, id: str) -> dict | None:
         result = (
             self._client.table("media_embeddings")
