@@ -138,9 +138,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# mcp.json file for mcp server integrations
-.mcp.json
-
 # WAT Framework
 .tmp/
 credentials.json
