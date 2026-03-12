@@ -1,0 +1,29 @@
+# HTTP client (async-capable, used for Gemini REST API calls)
+httpx>=0.27.0
+
+# Async file I/O
+aiofiles>=23.2.1
+
+# Supabase Python client (v2)
+supabase>=2.4.0
+
+# Environment variable loading
+python-dotenv>=1.0.0
+
+# Image processing (validation, resizing, base64 encoding)
+Pillow>=10.3.0
+
+# Numerical operations
+numpy>=1.26.0
+
+# CLI interface
+click>=8.1.7
+
+# Video frame extraction (requires ffmpeg on system PATH)
+opencv-python-headless>=4.9.0
+
+# PDF text extraction
+pypdf>=4.1.0
+
+# Word document text extraction (.docx)
+python-docx>=1.1.0
