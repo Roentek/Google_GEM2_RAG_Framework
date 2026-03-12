@@ -12,6 +12,8 @@ class QueryResult:
     answer: str
     sources: list[str]
     similarity_scores: list[float]
+    model_used: str = ""
+    usage: dict = field(default_factory=dict)   # prompt_tokens, completion_tokens, total_tokens
     raw_context: list[dict] = field(default_factory=list)
 
 
@@ -27,6 +29,7 @@ class QueryEngine:
         match_threshold: float = 0.5,
         match_count: int = 5,
         filter_type: str | None = None,
+        model: str | None = None,
     ) -> QueryResult:
         # 1. Embed the query (RETRIEVAL_QUERY task type — different from ingestion)
         query_embedding = await self._embedder.embed_text(
@@ -46,7 +49,8 @@ class QueryEngine:
                 answer="No relevant content found in the knowledge base for your query.",
                 sources=[],
                 similarity_scores=[],
-                raw_context=[],
+                model_used=model or self._config.OPENROUTER_MODEL,
+                usage={},
             )
 
         # 3. Build context string
@@ -78,16 +82,21 @@ class QueryEngine:
         context = "\n\n".join(context_parts)
 
         # 4. Call OpenRouter for answer generation
-        answer = await self._call_openrouter(question, context)
+        answer, model_used, usage = await self._call_openrouter(question, context, model)
 
         return QueryResult(
             answer=answer,
             sources=[r.get("source", "") for r in results],
             similarity_scores=[r.get("similarity", 0.0) for r in results],
+            model_used=model_used,
+            usage=usage,
             raw_context=results,
         )
 
-    async def _call_openrouter(self, question: str, context: str) -> str:
+    async def _call_openrouter(
+        self, question: str, context: str, model: str | None = None
+    ) -> tuple[str, str, dict]:
+        selected_model = model or self._config.OPENROUTER_MODEL
         messages = [
             {
                 "role": "system",
@@ -111,7 +120,7 @@ class QueryEngine:
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": self._config.OPENROUTER_MODEL,
+                    "model": selected_model,
                     "messages": messages,
                 },
             )
@@ -122,4 +131,8 @@ class QueryEngine:
             )
 
         data = response.json()
-        return data["choices"][0]["message"]["content"]
+        answer = data["choices"][0]["message"]["content"]
+        model_used = data.get("model", selected_model)
+        usage = data.get("usage", {})
+
+        return answer, model_used, usage
