@@ -11,16 +11,6 @@
         "DEFAULT_PARAMETERS": "{\"include_images\": true, \"max_results\": 15, \"search_depth\": \"advanced\"}"
       }
     },
-    "apify-mcp": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@apify/mcp-server"
-      ],
-      "env": {
-        "APIFY_TOKEN": "${APIFY_API_PAT}"
-      }
-    },
     "supabase-mcp": {
       "command": "npx",
       "args": [
