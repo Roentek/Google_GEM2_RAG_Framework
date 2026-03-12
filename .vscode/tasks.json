@@ -1,0 +1,16 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "open-browser",
+      "type": "shell",
+      "command": "start http://localhost:8000",
+      "windows": {
+        "command": "start http://localhost:8000"
+      },
+      "presentation": {
+        "reveal": "never"
+      }
+    }
+  ]
+}

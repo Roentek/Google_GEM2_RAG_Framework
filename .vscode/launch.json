@@ -1,0 +1,57 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "GEM2 RAG: Start Server",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["server:app", "--reload", "--port", "8000"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "jinja": true,
+      "postDebugTask": "open-browser"
+    },
+    {
+      "name": "GEM2 RAG: Ingest Text",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "src.main",
+      "args": ["ingest", "text", "./data/text", "--recursive"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "GEM2 RAG: Ingest Images",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "src.main",
+      "args": ["ingest", "image", "./data/images", "--recursive"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "GEM2 RAG: Ingest Video",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "src.main",
+      "args": ["ingest", "video", "./data/video", "--recursive"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "GEM2 RAG: Ingest Audio",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "src.main",
+      "args": ["ingest", "audio", "./data/audio", "--recursive"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal"
+    }
+  ]
+}
