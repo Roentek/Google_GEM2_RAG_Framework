@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GEM2 RAG</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0d0d0d;--card:#1a1a1a;--accent:#5b6af0;--text:#e0e0e0;--muted:#666;--border:#222}
+html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+
+/* --- layout --- */
+.app{display:flex;flex-direction:column;height:100vh}
+header{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;border-bottom:1px solid var(--border);flex-shrink:0}
+header h1{font-size:13px;font-variant:small-caps;letter-spacing:2px;color:var(--muted);font-weight:500}
+header select{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;outline:none}
+header select:focus{border-color:var(--accent)}
+
+.messages{flex:1;overflow-y:auto;padding:20px 20px 10px;display:flex;flex-direction:column;gap:12px}
+.messages::-webkit-scrollbar{width:6px}
+.messages::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+
+/* --- bubbles --- */
+.msg{max-width:72%;display:flex;flex-direction:column;gap:4px;animation:fadeIn .25s ease}
+.msg.user{align-self:flex-end}
+.msg.assistant{align-self:flex-start}
+.bubble{padding:10px 14px;border-radius:14px;line-height:1.55;white-space:pre-wrap;word-break:break-word;font-size:13.5px}
+.msg.user .bubble{background:var(--accent);color:#fff;border-bottom-right-radius:4px}
+.msg.assistant .bubble{background:var(--card);border-bottom-left-radius:4px}
+
+/* --- sources --- */
+.sources{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}
+.source-pill{font-size:11px;background:#111;border:1px solid var(--border);border-radius:10px;padding:2px 10px;color:var(--muted);cursor:pointer;transition:all .15s;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.source-pill:hover,.source-pill.open{max-width:none;color:var(--text);border-color:var(--accent)}
+.source-score{color:var(--accent);font-weight:600;margin-left:2px}
+
+/* --- typing indicator --- */
+.typing{display:none;align-self:flex-start;padding:10px 14px;background:var(--card);border-radius:14px;border-bottom-left-radius:4px}
+.typing.visible{display:flex;gap:5px;align-items:center}
+.typing span{width:6px;height:6px;background:var(--muted);border-radius:50%;animation:blink 1.2s infinite}
+.typing span:nth-child(2){animation-delay:.2s}
+.typing span:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:.3}40%{opacity:1}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+
+/* --- input bar --- */
+.input-bar{display:flex;gap:8px;padding:12px 20px;border-top:1px solid var(--border);flex-shrink:0;background:var(--bg)}
+.input-bar textarea{flex:1;resize:none;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-family:inherit;font-size:13.5px;line-height:1.45;outline:none;min-height:42px;max-height:120px}
+.input-bar textarea::placeholder{color:var(--muted)}
+.input-bar textarea:focus{border-color:var(--accent)}
+.input-bar button{background:var(--accent);border:none;color:#fff;border-radius:12px;padding:0 18px;cursor:pointer;font-size:14px;font-weight:600;transition:opacity .15s}
+.input-bar button:hover{opacity:.85}
+.input-bar button:disabled{opacity:.4;cursor:default}
+
+/* --- empty state --- */
+.empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;letter-spacing:.5px;font-variant:small-caps}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>gem2 rag</h1>
+    <select id="filter">
+      <option value="all">All types</option>
+      <option value="text">Text</option>
+      <option value="image">Image</option>
+      <option value="video">Video</option>
+      <option value="audio">Audio</option>
+    </select>
+  </header>
+
+  <div class="messages" id="messages">
+    <div class="empty" id="empty">ask anything&hellip;</div>
+  </div>
+
+  <div class="typing" id="typing"><span></span><span></span><span></span></div>
+
+  <div class="input-bar">
+    <textarea id="input" rows="1" placeholder="Message&hellip;" autofocus></textarea>
+    <button id="send">Send</button>
+  </div>
+</div>
+
+<script>
+const $msg = document.getElementById('messages');
+const $input = document.getElementById('input');
+const $send = document.getElementById('send');
+const $typing = document.getElementById('typing');
+const $filter = document.getElementById('filter');
+const $empty = document.getElementById('empty');
+
+let busy = false;
+
+function scrollBottom() {
+  $msg.scrollTo({ top: $msg.scrollHeight, behavior: 'smooth' });
+}
+
+function addMsg(role, text, sources) {
+  if ($empty) $empty.remove();
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = text;
+  div.appendChild(bubble);
+  if (sources && sources.length) {
+    const wrap = document.createElement('div');
+    wrap.className = 'sources';
+    sources.forEach(s => {
+      const pill = document.createElement('span');
+      pill.className = 'source-pill';
+      const name = s.source.split(/[/\\]/).pop() || s.source;
+      pill.innerHTML = name + '<span class="source-score"> ' + s.score.toFixed(3) + '</span>';
+      pill.title = s.source;
+      pill.addEventListener('click', () => {
+        pill.classList.toggle('open');
+        pill.innerHTML = pill.classList.contains('open')
+          ? s.source + '<span class="source-score"> ' + s.score.toFixed(3) + '</span>'
+          : name + '<span class="source-score"> ' + s.score.toFixed(3) + '</span>';
+      });
+      wrap.appendChild(pill);
+    });
+    div.appendChild(wrap);
+  }
+  $msg.appendChild(div);
+  scrollBottom();
+}
+
+async function send() {
+  const text = $input.value.trim();
+  if (!text || busy) return;
+  busy = true;
+  $send.disabled = true;
+  $input.value = '';
+  $input.style.height = 'auto';
+  addMsg('user', text);
+  $typing.classList.add('visible');
+  $msg.appendChild($typing);
+  scrollBottom();
+
+  try {
+    const res = await fetch('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: text,
+        filter_type: $filter.value,
+        top_k: 5
+      })
+    });
+    const data = await res.json();
+    $typing.classList.remove('visible');
+    addMsg('assistant', data.answer, data.sources);
+  } catch (e) {
+    $typing.classList.remove('visible');
+    addMsg('assistant', 'Connection error: ' + e.message);
+  } finally {
+    busy = false;
+    $send.disabled = false;
+    $input.focus();
+  }
+}
+
+$send.addEventListener('click', send);
+$input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+
+// auto-resize textarea
+$input.addEventListener('input', () => {
+  $input.style.height = 'auto';
+  $input.style.height = Math.min($input.scrollHeight, 120) + 'px';
+});
+</script>
+</body>
+</html>

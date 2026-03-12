@@ -27,3 +27,9 @@ pypdf>=4.1.0
 
 # Word document text extraction (.docx)
 python-docx>=1.1.0
+
+# Web server (chat UI)
+fastapi>=0.111.0
+uvicorn>=0.29.0
+jinja2>=3.1.4
+python-multipart>=0.0.9
