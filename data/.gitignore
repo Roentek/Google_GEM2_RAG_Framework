@@ -1,0 +1,16 @@
+# Ignore all media files in data/ — only keep the folder structure
+*.pdf
+*.txt
+*.md
+*.png
+*.jpg
+*.jpeg
+*.mp4
+*.mov
+*.mp3
+*.wav
+*.m4a
+*.ogg
+
+# Keep folder markers
+!.gitkeep
