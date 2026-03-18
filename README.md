@@ -14,7 +14,7 @@ Includes a dark-theme chat web UI, a CLI ingestor, automatic data-folder sync, a
 | --- | --- |
 | Embeddings | `gemini-embedding-2-preview` (REST API, 3072-dim) |
 | Vector DB | Supabase pgvector, HNSW index, cosine similarity |
-| LLM | OpenRouter (default: `anthropic/claude-sonnet-4`) |
+| LLM | OpenRouter (default: `anthropic/claude-sonnet-4-5`) |
 | Server | FastAPI + uvicorn |
 | File watcher | watchfiles (startup sync + live watch) |
 
@@ -53,7 +53,7 @@ SUPABASE_PROJECT_URL=https://your-project.supabase.co
 SUPABASE_PROJECT_KEY=your-service-role-key
 GEMINI_API_KEY=your-google-ai-studio-key
 OPENROUTER_API_KEY=sk-or-v1-...
-OPENROUTER_MODEL=anthropic/claude-sonnet-4
+OPENROUTER_MODEL=anthropic/claude-sonnet-4-5
 ```
 
 > **Never commit `.env`** — it is gitignored.
@@ -175,7 +175,7 @@ All content types share one `media_embeddings` table. Source keys use `path::chu
 | `SUPABASE_PROJECT_URL` | ✓ | e.g. `https://xyz.supabase.co` |
 | `SUPABASE_PROJECT_KEY` | ✓ | Service role key from Supabase dashboard |
 | `OPENROUTER_API_KEY` | ✓ | OpenRouter key for LLM answer generation |
-| `OPENROUTER_MODEL` | — | Default `anthropic/claude-sonnet-4` |
+| `OPENROUTER_MODEL` | — | Default `anthropic/claude-sonnet-4-5` |
 | `EMBEDDING_DIMENSION` | — | 128–3072, default `3072` (Matryoshka) |
 
 > `EMBEDDING_DIMENSION` must match the `VECTOR(N)` size in `supabase_schema.sql`. Change both together if you want a smaller index.
