@@ -1,5 +1,7 @@
 # Google Gemini Multimodal RAG Framework
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A production-ready RAG (Retrieval-Augmented Generation) pipeline using Google's **Gemini Embedding 2** model — the first fully multimodal embedding model — to store and query embeddings across text, images, video, and audio. Vectors are stored in **Supabase pgvector** and answers are generated via **OpenRouter** (defaults to Claude Sonnet 4).
 
 Includes a dark-theme chat web UI, a CLI ingestor, automatic data-folder sync, and real-time ingestion notifications.
