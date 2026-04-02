@@ -24,7 +24,7 @@
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "tavily-mcp",
-    "supabase-mcp",
-    "openrouter-mcp"
+    "openrouter-mcp",
+    "supabase-mcp"
   ]
 }
