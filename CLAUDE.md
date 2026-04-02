@@ -96,3 +96,7 @@ uvicorn server:app --reload --port 8000
 - `EMBEDDING_DIMENSION` change requires re-running `schema/supabase_schema.sql` and re-ingesting all data — `gemini-embedding-2-preview` embeddings are incompatible across dimension settings
 - `on_conflict="source"` makes re-ingestion idempotent — safe to re-run ingestors
 - `opencv-python-headless` requires `ffmpeg` on system PATH for video decoding
+
+## Applied Learning
+
+When something fails repeatedly, when I have to re-explain, or when a workaround is found for a platform/tool limitation, add a one line bullet here. Keep each bullet under 15 words. No explanations. Only add things taht will save time in the future sessions.
